@@ -139,3 +139,41 @@ export declare function indexOfLayerInArray(layer: GPULayer, array: (GPULayer | 
  * @returns
  */
 export declare function readPixelsAsync(gl: WebGL2RenderingContext, x: number, y: number, w: number, h: number, format: number, type: number, dstBuffer: ArrayBufferView): Promise<ArrayBufferView>;
+/**
+ * Read pixels from a framebuffer to a destination WebGLBuffer at a given offset.
+ * @param gl - WebGL2 Rendering Context
+ * @param dstBuffer - An object to read data into. The array type must match the type of the type parameter.
+ * @param x - The first horizontal pixel that is read from the lower left corner of a rectangular block of pixels.
+ * @param y - The first vertical pixel that is read from the lower left corner of a rectangular block of pixels.
+ * @param w - The width of the rectangle.
+ * @param h - The height of the rectangle.
+ * @param format - The GLenum format of the pixel data.
+ * @param componentType - The GLenum data type of the pixel data.
+ * @param componentSizeBytes - The size of each component in bytes.
+ * @param srcOffset - The offset in bytes from the start of the buffer object where data will be read.
+ * @param dstOffset - The offset in bytes from the start of the buffer object where data will be written.
+ * @returns
+ */
+export declare function readPixelsToWebGLBuffer(gl: WebGL2RenderingContext, dstBuffer: WebGLBuffer, x: number, y: number, w: number, h: number, format: number, componentType: number, componentSizeBytes?: number, numComponents?: number, srcOffset?: number, dstOffset?: number): void;
+declare type PixelTransfers = {
+    dstBuffer: WebGLBuffer;
+    srcOffset: number;
+    dstOffset: number;
+    length: number;
+};
+/**
+ * Read pixels from a framebuffer to multiple destination buffers at given offsets.
+ * @param gl - WebGL2 Rendering Context
+ * @param transfers - An array of transfer configurations representing a set of transfers to buffers.
+ * @param x - The first horizontal pixel that is read from the lower left corner of a rectangular block of pixels.
+ * @param y - The first vertical pixel that is read from the lower left corner of a rectangular block of pixels.
+ * @param w - The width of the rectangle.
+ * @param h - The height of the rectangle.
+ * @param format - The GLenum format of the pixel data.
+ * @param componentType - The GLenum data type of the pixel data.
+ * @param componentSizeBytes - The size of each component in bytes.
+ * @param numComponents - The number of components per pixel.
+ * @returns
+ */
+export declare function readPixelsToMultipleWebGLBuffers(gl: WebGL2RenderingContext, transfers: PixelTransfers[], x: number, y: number, w: number, h: number, format: number, componentType: number, componentSizeBytes?: number, numComponents?: number): void;
+export {};

@@ -102,6 +102,16 @@ export declare type GPULayerState = {
     texture: WebGLTexture;
     layer: GPULayer;
 };
+export declare type GPULayerRange = {
+    start: number;
+    end: number;
+};
+export declare type GPULayerRegion = {
+    x: number;
+    y: number;
+    width: number;
+    height: number;
+};
 /**
  * RGB image format.
  */

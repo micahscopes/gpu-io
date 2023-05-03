@@ -1,6 +1,6 @@
 import type { Texture } from 'three';
 import type { GPUComposer } from './GPUComposer';
-import { GPULayerArray, GPULayerFilter, GPULayerNumComponents, GPULayerType, GPULayerWrap, GPULayerState, ImageFormat, ImageType } from './constants';
+import { GPULayerArray, GPULayerFilter, GPULayerNumComponents, GPULayerType, GPULayerWrap, GPULayerState, ImageFormat, ImageType, GPULayerRange, GPULayerRegion } from './constants';
 export declare class GPULayer {
     private readonly _composer;
     /**
@@ -212,7 +212,32 @@ export declare class GPULayer {
      * @private
      */
     _prepareForWrite(incrementBufferIndex: boolean): void;
-    setFromArray(array: GPULayerArray | number[]): void;
+    /**
+     * Get texImage2D regions for layer range or region
+     * @private
+     */
+    _getTexImage2DRegions(range?: GPULayerRange | GPULayerRegion): {
+        x: number;
+        y: number;
+        width: number;
+        height: number;
+        sliceStart: number;
+        sliceEnd: number;
+    }[];
+    setFromArray(array: GPULayerArray | number[], range?: GPULayerRange | GPULayerRegion): void;
+    /**
+     * Set a single value at a given 2D location in the layer.
+     * @param x
+     * @param y
+     * @param components
+     */
+    setAtIndex2D(x: number, y: number, components: GPULayerArray | number[]): void;
+    /**
+     * Set a single value at a given 1D location in the layer.
+     * @param index
+     * @param components
+     */
+    setAtIndex1D(index: number, components: GPULayerArray | number[]): void;
     resize(dimensions: number | number[], arrayOrImage?: HTMLImageElement | GPULayerArray | number[]): void;
     /**
      * Set the clearValue of the GPULayer, which is applied during GPULayer.clear().
@@ -244,6 +269,16 @@ export declare class GPULayer {
      * @returns - A TypedArray containing current state of GPULayer.
      */
     getValuesAsync(): Promise<GPULayerArray>;
+    /**
+     * Copies the contents of the layer to a WebGLBuffer.
+     * @param dstBuffer - The WebGLBuffer to copy the contents of the layer to.
+     * @param dstOffset - The offset in bytes to start copying to.
+     * @param [srcX=0] - The x coordinate of the source rectangle.
+     * @param [srcY=0] - The y coordinate of the source rectangle.
+     * @param [srcWidth=0] - The width of the source rectangle.
+     * @param [srcHeight=0] - The height of the source rectangle.
+     */
+    copyToWebGLBuffer(dstBuffer: WebGLBuffer, dstOffset?: number, srcX?: number, srcY?: number, srcWidth?: number, srcHeight?: number): void;
     private _getCanvasWithImageData;
     /**
      * Get the current state of this GPULayer as an Image.
@@ -348,5 +383,5 @@ export declare class GPULayer {
     /**
      * @private
      */
-    static validateGPULayerArray(array: GPULayerArray | number[], layer: GPULayer): GPULayerArray;
+    static validateGPULayerArray(array: GPULayerArray | number[], layer: GPULayer, validateSubarrayLength?: number): GPULayerArray;
 }

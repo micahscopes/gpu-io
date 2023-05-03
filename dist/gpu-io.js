@@ -2847,14 +2847,96 @@ var GPULayer = /** @class */ (function () {
             this._textureOverrides[this.bufferIndex] = undefined;
         }
     };
-    GPULayer.prototype.setFromArray = function (array) {
-        var _a = this, _composer = _a._composer, _glInternalFormat = _a._glInternalFormat, _glFormat = _a._glFormat, _glType = _a._glType, width = _a.width, height = _a.height, _currentTexture = _a._currentTexture;
+    /**
+     * Get texImage2D regions for layer range or region
+     * @private
+     */
+    GPULayer.prototype._getTexImage2DRegions = function (range) {
+        var _a = this, width = _a.width, height = _a.height;
+        if (!range) {
+            // no range
+            return [{ x: 0, y: 0, width: width, height: height, sliceStart: 0, sliceEnd: width * height }];
+        }
+        else if (range.width !== undefined) {
+            // this is a 2D region
+            var _b = range, x = _b.x, y = _b.y, width_1 = _b.width, height_1 = _b.height;
+            return [{ x: x, y: y, width: width_1, height: height_1, sliceStart: 0, sliceEnd: width_1 * height_1 }];
+        }
+        if (range.start !== undefined) {
+            // this is a 1D range
+            var width_2 = this.width;
+            var _c = range, start = _c.start, end = _c.end;
+            var length_1 = end - start;
+            var regions = [];
+            var numRows = Math.ceil(length_1 / width_2);
+            if (numRows > 0) {
+                // first region, top cap
+                regions.push({
+                    x: start % width_2,
+                    y: Math.floor(start / width_2),
+                    width: Math.min(width_2 - start % width_2, length_1),
+                    height: 1,
+                    sliceStart: 0,
+                    sliceEnd: Math.min(width_2 - start % width_2, length_1),
+                });
+            }
+            if (numRows > 1) {
+                // end region, bottom cap
+                regions.push({
+                    x: 0,
+                    y: Math.floor(end / width_2),
+                    width: end % width_2,
+                    height: 1,
+                    sliceStart: length_1 - end % width_2,
+                    sliceEnd: length_1,
+                });
+            }
+            if (numRows > 2) {
+                // middle region
+                regions.push({
+                    x: 0,
+                    y: Math.floor(start / width_2) + 1,
+                    width: width_2,
+                    height: numRows - 2,
+                    sliceStart: width_2 - start % width_2 + 1,
+                    sliceEnd: width_2 - start % width_2 + 1 + (numRows - 2) * width_2,
+                });
+            }
+            return regions;
+        }
+        return [];
+    };
+    GPULayer.prototype.setFromArray = function (array, range) {
+        var _a = this, _composer = _a._composer, _glFormat = _a._glFormat, _glType = _a._glType, _currentTexture = _a._currentTexture, numComponents = _a.numComponents;
         var gl = _composer.gl;
-        var validatedArray = GPULayer.validateGPULayerArray(array, this);
+        var regions = this._getTexImage2DRegions(range);
         gl.bindTexture(gl.TEXTURE_2D, _currentTexture);
-        gl.texImage2D(gl.TEXTURE_2D, 0, _glInternalFormat, width, height, 0, _glFormat, _glType, validatedArray);
+        for (var _i = 0, regions_1 = regions; _i < regions_1.length; _i++) {
+            var _b = regions_1[_i], x = _b.x, y = _b.y, width = _b.width, height = _b.height, sliceStart = _b.sliceStart, sliceEnd = _b.sliceEnd;
+            var validatedArray = GPULayer.validateGPULayerArray(array.slice(sliceStart * numComponents, sliceEnd * numComponents), this, 
+            // if no range was passed, we're setting the whole layer and we can validate the whole array
+            !range ? undefined : Math.min(sliceEnd - sliceStart, array.length / numComponents));
+            gl.texSubImage2D(gl.TEXTURE_2D, 0, x, y, width, height, _glFormat, _glType, validatedArray);
+        }
         // Unbind texture.
         gl.bindTexture(gl.TEXTURE_2D, null);
+    };
+    /**
+     * Set a single value at a given 2D location in the layer.
+     * @param x
+     * @param y
+     * @param components
+     */
+    GPULayer.prototype.setAtIndex2D = function (x, y, components) {
+        this.setFromArray(components, { x: x, y: y, width: 1, height: 1 });
+    };
+    /**
+     * Set a single value at a given 1D location in the layer.
+     * @param index
+     * @param components
+     */
+    GPULayer.prototype.setAtIndex1D = function (index, components) {
+        this.setFromArray(components, { start: index, end: index + 1 });
     };
     // setFromImage(image: HTMLImageElement) {
     // 	const { name, _composer, width, height, _currentTexture, _glInternalFormat, _glFormat, _glType, numComponents, type } = this;
@@ -3076,7 +3158,7 @@ var GPULayer = /** @class */ (function () {
         var _values = this._values;
         // In some cases glNumChannels may be > numComponents.
         if (_valuesBufferView || _values !== _valuesRaw || numComponents !== _glNumChannels) {
-            for (var i = 0, length_1 = width * height; i < length_1; i++) {
+            for (var i = 0, length_2 = width * height; i < length_2; i++) {
                 var index1 = i * _glNumChannels;
                 var index2 = i * numComponents;
                 if (index2 >= OUTPUT_LENGTH)
@@ -3132,6 +3214,31 @@ var GPULayer = /** @class */ (function () {
                 }
             });
         });
+    };
+    /**
+     * Copies the contents of the layer to a WebGLBuffer.
+     * @param dstBuffer - The WebGLBuffer to copy the contents of the layer to.
+     * @param dstOffset - The offset in bytes to start copying to.
+     * @param [srcX=0] - The x coordinate of the source rectangle.
+     * @param [srcY=0] - The y coordinate of the source rectangle.
+     * @param [srcWidth=0] - The width of the source rectangle.
+     * @param [srcHeight=0] - The height of the source rectangle.
+     */
+    GPULayer.prototype.copyToWebGLBuffer = function (dstBuffer, dstOffset, srcX, srcY, srcWidth, srcHeight) {
+        if (dstOffset === void 0) { dstOffset = 0; }
+        if (srcX === void 0) { srcX = 0; }
+        if (srcY === void 0) { srcY = 0; }
+        var _a = this, fullWidth = _a.width, fullHeight = _a.height, _composer = _a._composer;
+        var width = srcWidth || fullWidth;
+        var height = srcHeight || fullHeight;
+        var gl = _composer.gl, isWebGL2 = _composer.isWebGL2;
+        if (!isWebGL2) {
+            throw new Error('copyToBuffer() is only supported for WebGL2.');
+        }
+        var _b = this._getValuesSetup(), _glFormat = _b._glFormat, _glType = _b._glType, _valuesRaw = _b._valuesRaw, _glNumChannels = _b._glNumChannels, _internalType = _b._internalType;
+        (0, utils_1.readPixelsToWebGLBuffer)(gl, dstBuffer, srcX, srcY, width, height, _glFormat, _glType, 4, // to-do: support all the types by passing in the component byte size
+        // maybe this can come from `this._getValuesSetup()`?
+        _glNumChannels, dstOffset);
     };
     GPULayer.prototype._getCanvasWithImageData = function (multiplier) {
         var values = this.getValues();
@@ -4039,13 +4146,21 @@ exports.minMaxValuesForType = minMaxValuesForType;
  * Recasts typed array to match GPULayer.internalType.
  * @private
  */
-GPULayer_1.GPULayer.validateGPULayerArray = function (array, layer) {
+GPULayer_1.GPULayer.validateGPULayerArray = function (array, layer, validateSubarrayLength) {
+    if (validateSubarrayLength === void 0) { validateSubarrayLength = null; }
     var numComponents = layer.numComponents, width = layer.width, height = layer.height, name = layer.name;
     var glNumChannels = layer._glNumChannels;
     var internalType = layer._internalType;
     var length = layer.is1D() ? layer.length : null;
     // Check that data is correct length (user error).
-    if (array.length !== width * height * numComponents) { // Either the correct length for WebGLTexture size
+    // Are we validating a subarray?
+    if (validateSubarrayLength) {
+        if (array.length !== validateSubarrayLength * numComponents) {
+            throw new Error("Invalid data length: ".concat(array.length, " for GPULayer \"").concat(name, "\" of numComponents: ").concat(numComponents, "."));
+        }
+        // Otherwise our data
+    }
+    else if (array.length !== width * height * numComponents) { // Either the correct length for WebGLTexture size
         if (!length || (length && array.length !== length * numComponents)) { // Of the correct length for 1D array.
             throw new Error("Invalid data length: ".concat(array.length, " for GPULayer \"").concat(name, "\" of ").concat(length ? "length ".concat(length, " and ") : '', "dimensions: [").concat(width, ", ").concat(height, "] and numComponents: ").concat(numComponents, "."));
         }
@@ -4094,7 +4209,11 @@ GPULayer_1.GPULayer.validateGPULayerArray = function (array, layer) {
     var _a = minMaxValuesForType(internalType), min = _a.min, max = _a.max;
     // Then check if array needs to be lengthened.
     // This could be because glNumChannels !== numComponents or because length !== width * height.
-    var arrayLength = width * height * glNumChannels;
+    var arrayLength = 
+    // If we are validating a subarray, we need to use the subarray length.
+    validateSubarrayLength ? validateSubarrayLength * glNumChannels :
+        // otherwise we can use the layer length.
+        width * height * glNumChannels;
     var shouldResize = array.length !== arrayLength;
     var validatedArray = array;
     if (shouldTypeCast || shouldResize) {
@@ -6192,7 +6311,7 @@ var Programs = __webpack_require__(579);
 /**
  * @private
  */
-var _testing = __assign(__assign(__assign(__assign(__assign(__assign({ isFloatType: utils.isFloatType, isUnsignedIntType: utils.isUnsignedIntType, isSignedIntType: utils.isSignedIntType, isIntType: utils.isIntType, makeShaderHeader: utils.makeShaderHeader, compileShader: utils.compileShader, initGLProgram: utils.initGLProgram, readyToRead: utils.readyToRead, preprocessVertexShader: utils.preprocessVertexShader, preprocessFragmentShader: utils.preprocessFragmentShader, isPowerOf2: utils.isPowerOf2, initSequentialFloatArray: utils.initSequentialFloatArray, uniformInternalTypeForValue: utils.uniformInternalTypeForValue, indexOfLayerInArray: utils.indexOfLayerInArray, readPixelsAsync: utils.readPixelsAsync }, extensions), regex), checks), GPULayerHelpers), polyfills), conversions);
+var _testing = __assign(__assign(__assign(__assign(__assign(__assign({ isFloatType: utils.isFloatType, isUnsignedIntType: utils.isUnsignedIntType, isSignedIntType: utils.isSignedIntType, isIntType: utils.isIntType, makeShaderHeader: utils.makeShaderHeader, compileShader: utils.compileShader, initGLProgram: utils.initGLProgram, readyToRead: utils.readyToRead, preprocessVertexShader: utils.preprocessVertexShader, preprocessFragmentShader: utils.preprocessFragmentShader, isPowerOf2: utils.isPowerOf2, initSequentialFloatArray: utils.initSequentialFloatArray, uniformInternalTypeForValue: utils.uniformInternalTypeForValue, indexOfLayerInArray: utils.indexOfLayerInArray, readPixelsAsync: utils.readPixelsAsync, readPixelsToWebGLBuffer: utils.readPixelsToWebGLBuffer, readPixelsToMultipleWebGLBuffers: utils.readPixelsToMultipleWebGLBuffers }, extensions), regex), checks), GPULayerHelpers), polyfills), conversions);
 exports._testing = _testing;
 // Named exports.
 var isWebGL2 = utils.isWebGL2, isWebGL2Supported = utils.isWebGL2Supported, isHighpSupportedInVertexShader = utils.isHighpSupportedInVertexShader, isHighpSupportedInFragmentShader = utils.isHighpSupportedInFragmentShader, getVertexShaderMediumpPrecision = utils.getVertexShaderMediumpPrecision, getFragmentShaderMediumpPrecision = utils.getFragmentShaderMediumpPrecision;
@@ -6924,7 +7043,7 @@ var __generator = (this && this.__generator) || function (thisArg, body) {
     }
 };
 Object.defineProperty(exports, "__esModule", ({ value: true }));
-exports.readPixelsAsync = exports.indexOfLayerInArray = exports.uniformInternalTypeForValue = exports.preprocessFragmentShader = exports.preprocessVertexShader = exports.convertFragmentShaderToGLSL1 = exports.initSequentialFloatArray = exports.isPowerOf2 = exports.getFragmentShaderMediumpPrecision = exports.getVertexShaderMediumpPrecision = exports.isHighpSupportedInFragmentShader = exports.isHighpSupportedInVertexShader = exports.readyToRead = exports.isWebGL2Supported = exports.isWebGL2 = exports.initGLProgram = exports.compileShader = exports.makeShaderHeader = exports.isIntType = exports.isSignedIntType = exports.isUnsignedIntType = exports.isFloatType = void 0;
+exports.readPixelsToMultipleWebGLBuffers = exports.readPixelsToWebGLBuffer = exports.readPixelsAsync = exports.indexOfLayerInArray = exports.uniformInternalTypeForValue = exports.preprocessFragmentShader = exports.preprocessVertexShader = exports.convertFragmentShaderToGLSL1 = exports.initSequentialFloatArray = exports.isPowerOf2 = exports.getFragmentShaderMediumpPrecision = exports.getVertexShaderMediumpPrecision = exports.isHighpSupportedInFragmentShader = exports.isHighpSupportedInVertexShader = exports.readyToRead = exports.isWebGL2Supported = exports.isWebGL2 = exports.initGLProgram = exports.compileShader = exports.makeShaderHeader = exports.isIntType = exports.isSignedIntType = exports.isUnsignedIntType = exports.isFloatType = void 0;
 var type_checks_1 = __webpack_require__(566);
 var constants_1 = __webpack_require__(601);
 var conversions_1 = __webpack_require__(690);
@@ -7607,6 +7726,68 @@ function readPixelsAsync(gl, x, y, w, h, format, type, dstBuffer) {
     });
 }
 exports.readPixelsAsync = readPixelsAsync;
+/**
+ * Read pixels from a framebuffer to a destination WebGLBuffer at a given offset.
+ * @param gl - WebGL2 Rendering Context
+ * @param dstBuffer - An object to read data into. The array type must match the type of the type parameter.
+ * @param x - The first horizontal pixel that is read from the lower left corner of a rectangular block of pixels.
+ * @param y - The first vertical pixel that is read from the lower left corner of a rectangular block of pixels.
+ * @param w - The width of the rectangle.
+ * @param h - The height of the rectangle.
+ * @param format - The GLenum format of the pixel data.
+ * @param componentType - The GLenum data type of the pixel data.
+ * @param componentSizeBytes - The size of each component in bytes.
+ * @param srcOffset - The offset in bytes from the start of the buffer object where data will be read.
+ * @param dstOffset - The offset in bytes from the start of the buffer object where data will be written.
+ * @returns
+ */
+function readPixelsToWebGLBuffer(gl, dstBuffer, x, y, w, h, format, componentType, componentSizeBytes, numComponents, srcOffset, dstOffset) {
+    if (componentSizeBytes === void 0) { componentSizeBytes = 4; }
+    if (numComponents === void 0) { numComponents = 4; }
+    if (srcOffset === void 0) { srcOffset = 0; }
+    if (dstOffset === void 0) { dstOffset = 0; }
+    var pbo = gl.createBuffer();
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
+    gl.bufferData(gl.PIXEL_PACK_BUFFER, w * h * numComponents * componentSizeBytes, gl.STATIC_COPY);
+    gl.readPixels(x, y, w, h, format, componentType, 0);
+    gl.bindBuffer(gl.COPY_WRITE_BUFFER, dstBuffer);
+    gl.copyBufferSubData(gl.PIXEL_PACK_BUFFER, gl.COPY_WRITE_BUFFER, srcOffset, dstOffset, w * h * numComponents * componentSizeBytes);
+    gl.bindBuffer(gl.COPY_WRITE_BUFFER, null);
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    gl.deleteBuffer(pbo);
+}
+exports.readPixelsToWebGLBuffer = readPixelsToWebGLBuffer;
+/**
+ * Read pixels from a framebuffer to multiple destination buffers at given offsets.
+ * @param gl - WebGL2 Rendering Context
+ * @param transfers - An array of transfer configurations representing a set of transfers to buffers.
+ * @param x - The first horizontal pixel that is read from the lower left corner of a rectangular block of pixels.
+ * @param y - The first vertical pixel that is read from the lower left corner of a rectangular block of pixels.
+ * @param w - The width of the rectangle.
+ * @param h - The height of the rectangle.
+ * @param format - The GLenum format of the pixel data.
+ * @param componentType - The GLenum data type of the pixel data.
+ * @param componentSizeBytes - The size of each component in bytes.
+ * @param numComponents - The number of components per pixel.
+ * @returns
+ */
+function readPixelsToMultipleWebGLBuffers(gl, transfers, x, y, w, h, format, componentType, componentSizeBytes, numComponents) {
+    if (componentSizeBytes === void 0) { componentSizeBytes = 4; }
+    if (numComponents === void 0) { numComponents = 4; }
+    var pbo = gl.createBuffer();
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, pbo);
+    gl.bufferData(gl.PIXEL_PACK_BUFFER, w * h * componentSizeBytes * numComponents, gl.STREAM_READ);
+    gl.readPixels(x, y, w, h, format, componentType, 0);
+    transfers.forEach(function (_a) {
+        var dstBuffer = _a.dstBuffer, srcOffset = _a.srcOffset, dstOffset = _a.dstOffset, length = _a.length;
+        gl.bindBuffer(gl.COPY_WRITE_BUFFER, dstBuffer);
+        gl.copyBufferSubData(gl.PIXEL_PACK_BUFFER, gl.COPY_WRITE_BUFFER, srcOffset, dstOffset, length);
+        gl.bindBuffer(gl.COPY_WRITE_BUFFER, null);
+    });
+    gl.bindBuffer(gl.PIXEL_PACK_BUFFER, null);
+    gl.deleteBuffer(pbo);
+}
+exports.readPixelsToMultipleWebGLBuffers = readPixelsToMultipleWebGLBuffers;
 
 
 /***/ }),

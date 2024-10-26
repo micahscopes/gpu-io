@@ -4160,9 +4160,11 @@ GPULayer_1.GPULayer.validateGPULayerArray = function (array, layer, validateSuba
         }
         // Otherwise our data
     }
-    else if (array.length !== width * height * numComponents) { // Either the correct length for WebGLTexture size
-        if (!length || (length && array.length !== length * numComponents)) { // Of the correct length for 1D array.
-            throw new Error("Invalid data length: ".concat(array.length, " for GPULayer \"").concat(name, "\" of ").concat(length ? "length ".concat(length, " and ") : '', "dimensions: [").concat(width, ", ").concat(height, "] and numComponents: ").concat(numComponents, "."));
+    else if (array.length !== width * height * numComponents) {
+        // Either the correct length for WebGLTexture size
+        if (!length || (length && array.length !== length * numComponents)) {
+            // Of the correct length for 1D array.
+            throw new Error("Invalid data length: ".concat(array.length, " for GPULayer \"").concat(name, "\" of ").concat(length ? "length ".concat(length, " and ") : "", "dimensions: [").concat(width, ", ").concat(height, "] and numComponents: ").concat(numComponents, "."));
         }
     }
     // Get array type to figure out if we need to type cast.
@@ -4203,7 +4205,9 @@ GPULayer_1.GPULayer.validateGPULayerArray = function (array, layer, validateSuba
             shouldTypeCast = internalType !== constants_1.INT;
             break;
         default:
-            throw new Error("Invalid array type: ".concat(array.constructor.name, " for GPULayer \"").concat(name, "\", please use one of [").concat(constants_1.validArrayTypes.map(function (constructor) { return constructor.name; }).join(', '), "]."));
+            throw new Error("Invalid array type: ".concat(array.constructor.name, " for GPULayer \"").concat(name, "\", please use one of [").concat(constants_1.validArrayTypes
+                .map(function (constructor) { return constructor.name; })
+                .join(", "), "]."));
     }
     // Get min and max values for internalType.
     var _a = minMaxValuesForType(internalType), min = _a.min, max = _a.max;
@@ -4211,38 +4215,50 @@ GPULayer_1.GPULayer.validateGPULayerArray = function (array, layer, validateSuba
     // This could be because glNumChannels !== numComponents or because length !== width * height.
     var arrayLength = 
     // If we are validating a subarray, we need to use the subarray length.
-    validateSubarrayLength ? validateSubarrayLength * glNumChannels :
-        // otherwise we can use the layer length.
-        width * height * glNumChannels;
+    validateSubarrayLength
+        ? validateSubarrayLength * glNumChannels
+        : // otherwise we can use the layer length.
+            width * height * glNumChannels;
     var shouldResize = array.length !== arrayLength;
     var validatedArray = array;
     if (shouldTypeCast || shouldResize) {
         validatedArray = GPULayer_1.GPULayer.initArrayForType(internalType, arrayLength);
-        // Fill new data array with old data.
-        // We have to handle the case of Float16 specially by converting data to Uint16Array.
-        var view = (internalType === constants_1.HALF_FLOAT && shouldTypeCast) ? new DataView(validatedArray.buffer) : null;
+        var view = internalType === constants_1.HALF_FLOAT && shouldTypeCast
+            ? new DataView(validatedArray.buffer)
+            : null;
         for (var i = 0, _len = array.length / numComponents; i < _len; i++) {
-            for (var j = 0; j < numComponents; j++) {
-                var origValue = array[i * numComponents + j];
-                var value = origValue;
-                var clipped = false;
-                if (value < min) {
-                    value = min;
-                    clipped = true;
-                }
-                else if (value > max) {
-                    value = max;
-                    clipped = true;
-                }
-                if (clipped) {
-                    console.warn("Clipping out of range value ".concat(origValue, " to ").concat(value, " for GPULayer \"").concat(name, "\" with internal type ").concat(internalType, "."));
-                }
+            for (var j = 0; j < glNumChannels; j++) {
                 var index = i * glNumChannels + j;
-                if (view) {
-                    (0, float16_1.setFloat16)(view, 2 * index, value, true);
+                if (j < numComponents) {
+                    var origValue = array[i * numComponents + j];
+                    var value = origValue;
+                    var clipped = false;
+                    if (value < min) {
+                        value = min;
+                        clipped = true;
+                    }
+                    else if (value > max) {
+                        value = max;
+                        clipped = true;
+                    }
+                    if (clipped) {
+                        console.warn("Clipping out of range value ".concat(origValue, " to ").concat(value, " for GPULayer \"").concat(name, "\" with internal type ").concat(internalType, "."));
+                    }
+                    if (view) {
+                        (0, float16_1.setFloat16)(view, 2 * index, value, true);
+                    }
+                    else {
+                        validatedArray[index] = value;
+                    }
                 }
                 else {
-                    validatedArray[index] = value;
+                    // Set extra components to zero
+                    if (view) {
+                        (0, float16_1.setFloat16)(view, 2 * index, 0, true);
+                    }
+                    else {
+                        validatedArray[index] = 0;
+                    }
                 }
             }
         }

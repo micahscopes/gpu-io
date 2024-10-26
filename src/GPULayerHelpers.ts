@@ -889,111 +889,136 @@ export function minMaxValuesForType(type: GPULayerType) {
  * Recasts typed array to match GPULayer.internalType.
  * @private
  */
-GPULayer.validateGPULayerArray = (array: GPULayerArray | number[], layer: GPULayer, validateSubarrayLength : number | null = null) => {
-	const { numComponents, width, height, name } = layer;
-	const glNumChannels = layer._glNumChannels;
-	const internalType = layer._internalType;
-	const length = layer.is1D() ? layer.length : null;
+GPULayer.validateGPULayerArray = (array: GPULayerArray | number[], layer: GPULayer, validateSubarrayLength: number | null = null) => {
+  const { numComponents, width, height, name } = layer;
+  const glNumChannels = layer._glNumChannels;
+  const internalType = layer._internalType;
+  const length = layer.is1D() ? layer.length : null;
 
-	// Check that data is correct length (user error).
-	
-	// Are we validating a subarray?
-	if (validateSubarrayLength) {
-		if (array.length !== validateSubarrayLength * numComponents) {
-			throw new Error(`Invalid data length: ${array.length} for GPULayer "${name}" of numComponents: ${numComponents}.`);
-		}
-	// Otherwise our data
-	} else if (array.length !== width * height * numComponents) { // Either the correct length for WebGLTexture size
-		if (!length || (length &&  array.length !== length * numComponents)) { // Of the correct length for 1D array.
-			throw new Error(`Invalid data length: ${array.length} for GPULayer "${name}" of ${length ? `length ${length} and ` : ''}dimensions: [${width}, ${height}] and numComponents: ${numComponents}.`);
-		}
-	}
+  // Check that data is correct length (user error).
 
-	// Get array type to figure out if we need to type cast.
-	// For webgl1.0 we may need to cast an int type to a FLOAT or HALF_FLOAT.
-	let shouldTypeCast = false;
-	switch(array.constructor) {
-		case Array:
-			shouldTypeCast = true;
-			break;
-		case Float32Array:
-			shouldTypeCast = internalType !== FLOAT;
-			break;
-		case Uint8Array:
-			shouldTypeCast = internalType !== UNSIGNED_BYTE;
-			break;
-		case Int8Array:
-			shouldTypeCast = internalType !== BYTE;
-			break;
-		case Uint16Array:
-			// User may have converted to HALF_FLOAT already.
-			// We need to add this check in case type is UNSIGNED_SHORT and internal type is HALF_FLOAT.
-			// (This can happen for some WebGL1 contexts.)
-			// if (type === HALF_FLOAT) {
-			// 	shouldTypeCast = internalType !== HALF_FLOAT;
-			// 	// In order to complete this, we will also need to handle converting from Uint16Array to some other type.
-			// 	// Are there cases where HALF_FLOAT is not supported?
-			// } else {
-				shouldTypeCast = internalType !== UNSIGNED_SHORT
-			// }
-			break;
-		case Int16Array:
-			shouldTypeCast = internalType !== SHORT;
-			break;
-		case Uint32Array:
-			shouldTypeCast = internalType !== UNSIGNED_INT;
-			break;
-		case Int32Array:
-			shouldTypeCast = internalType !== INT;
-			break;
-		default:
-			throw new Error(`Invalid array type: ${array.constructor.name} for GPULayer "${name}", please use one of [${validArrayTypes.map(constructor => constructor.name).join(', ')}].`);
-	}
+  // Are we validating a subarray?
+  if (validateSubarrayLength) {
+    if (array.length !== validateSubarrayLength * numComponents) {
+      throw new Error(
+        `Invalid data length: ${array.length} for GPULayer "${name}" of numComponents: ${numComponents}.`
+      );
+    }
+    // Otherwise our data
+  } else if (array.length !== width * height * numComponents) {
+    // Either the correct length for WebGLTexture size
+    if (!length || (length && array.length !== length * numComponents)) {
+      // Of the correct length for 1D array.
+      throw new Error(
+        `Invalid data length: ${array.length} for GPULayer "${name}" of ${length ? `length ${length} and ` : ""
+        }dimensions: [${width}, ${height}] and numComponents: ${numComponents}.`
+      );
+    }
+  }
 
-	// Get min and max values for internalType.
-	const { min, max } = minMaxValuesForType(internalType);
+  // Get array type to figure out if we need to type cast.
+  // For webgl1.0 we may need to cast an int type to a FLOAT or HALF_FLOAT.
+  let shouldTypeCast = false;
+  switch (array.constructor) {
+    case Array:
+      shouldTypeCast = true;
+      break;
+    case Float32Array:
+      shouldTypeCast = internalType !== FLOAT;
+      break;
+    case Uint8Array:
+      shouldTypeCast = internalType !== UNSIGNED_BYTE;
+      break;
+    case Int8Array:
+      shouldTypeCast = internalType !== BYTE;
+      break;
+    case Uint16Array:
+      // User may have converted to HALF_FLOAT already.
+      // We need to add this check in case type is UNSIGNED_SHORT and internal type is HALF_FLOAT.
+      // (This can happen for some WebGL1 contexts.)
+      // if (type === HALF_FLOAT) {
+      // 	shouldTypeCast = internalType !== HALF_FLOAT;
+      // 	// In order to complete this, we will also need to handle converting from Uint16Array to some other type.
+      // 	// Are there cases where HALF_FLOAT is not supported?
+      // } else {
+      shouldTypeCast = internalType !== UNSIGNED_SHORT;
+      // }
+      break;
+    case Int16Array:
+      shouldTypeCast = internalType !== SHORT;
+      break;
+    case Uint32Array:
+      shouldTypeCast = internalType !== UNSIGNED_INT;
+      break;
+    case Int32Array:
+      shouldTypeCast = internalType !== INT;
+      break;
+    default:
+      throw new Error(
+        `Invalid array type: ${array.constructor.name
+        } for GPULayer "${name}", please use one of [${validArrayTypes
+          .map((constructor) => constructor.name)
+          .join(", ")}].`
+      );
+  }
 
-	// Then check if array needs to be lengthened.
-	// This could be because glNumChannels !== numComponents or because length !== width * height.
+  // Get min and max values for internalType.
+  const { min, max } = minMaxValuesForType(internalType);
 
-	const arrayLength =
-		// If we are validating a subarray, we need to use the subarray length.
-		validateSubarrayLength ? validateSubarrayLength * glNumChannels :
-		// otherwise we can use the layer length.
-		width * height * glNumChannels;
+  // Then check if array needs to be lengthened.
+  // This could be because glNumChannels !== numComponents or because length !== width * height.
 
-	const shouldResize = array.length !== arrayLength;
-		
-	let validatedArray = array as GPULayerArray;
-	if (shouldTypeCast || shouldResize) {
-		validatedArray = GPULayer.initArrayForType(internalType, arrayLength);
-		// Fill new data array with old data.
-		// We have to handle the case of Float16 specially by converting data to Uint16Array.
-		const view = (internalType === HALF_FLOAT && shouldTypeCast) ? new DataView(validatedArray.buffer) : null;
-		for (let i = 0, _len = array.length / numComponents; i < _len; i++) {
-			for (let j = 0; j < numComponents; j++) {
-				const origValue = array[i * numComponents + j];
-				let value = origValue;
-				let clipped = false;
-				if (value < min) {
-					value = min;
-					clipped = true;
-				} else if (value > max) {
-					value = max;
-					clipped = true;
-				}
-				if (clipped) {
-					console.warn(`Clipping out of range value ${origValue} to ${value} for GPULayer "${name}" with internal type ${internalType}.`);
-				}
-				const index = i * glNumChannels + j;
-				if (view) {
-					setFloat16(view, 2 * index, value, true);
-				} else {
-					validatedArray[index] = value;
-				}
-			}
-		}
-	}
+  const arrayLength =
+    // If we are validating a subarray, we need to use the subarray length.
+    validateSubarrayLength
+      ? validateSubarrayLength * glNumChannels
+      : // otherwise we can use the layer length.
+      width * height * glNumChannels;
 
-	return validatedArray;
+  const shouldResize = array.length !== arrayLength;
+
+  let validatedArray = array as GPULayerArray;
+  if (shouldTypeCast || shouldResize) {
+    validatedArray = GPULayer.initArrayForType(internalType, arrayLength);
+    const view =
+      internalType === HALF_FLOAT && shouldTypeCast
+        ? new DataView(validatedArray.buffer)
+        : null;
+    for (let i = 0, _len = array.length / numComponents; i < _len; i++) {
+      for (let j = 0; j < glNumChannels; j++) {
+        const index = i * glNumChannels + j;
+        if (j < numComponents) {
+          const origValue = array[i * numComponents + j];
+          let value = origValue;
+          let clipped = false;
+          if (value < min) {
+            value = min;
+            clipped = true;
+          } else if (value > max) {
+            value = max;
+            clipped = true;
+          }
+          if (clipped) {
+            console.warn(
+              `Clipping out of range value ${origValue} to ${value} for GPULayer "${name}" with internal type ${internalType}.`
+            );
+          }
+          if (view) {
+            setFloat16(view, 2 * index, value, true);
+          } else {
+            validatedArray[index] = value;
+          }
+        } else {
+          // Set extra components to zero
+          if (view) {
+            setFloat16(view, 2 * index, 0, true);
+          } else {
+            validatedArray[index] = 0;
+          }
+        }
+      }
+    }
+  }
+
+  return validatedArray;
 }
